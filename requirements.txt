@@ -1,0 +1,8 @@
+streamlit
+groq
+python-dotenv
+deep-translator
+langdetect
+scikit-learn
+nltk
+numpy
