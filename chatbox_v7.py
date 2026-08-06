@@ -35,13 +35,24 @@ def ask_llm(user_input):
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "user", "content": user_input}
-            ]
+            messages=conversation_history
         )
         return response.choices[0].message.content
     except Exception as e:
         return f"Sorry, I couldn't reach the AI service. {e}"
+
+conversation_history = [
+    {
+        "role": "system",
+        "content": (
+            "You are Aura AI, a helpful, knowledgeable assistant. "
+            "Answer clearly and concisely. Break down complex topics into "
+            "simple explanations when helpful. If you don't know something "
+            "or aren't certain, say so honestly rather than guessing. "
+            "Keep a friendly, professional tone. Avoid unnecessary repetition."
+        )
+    }
+]
 
 def get_response(user_input):
     try:
@@ -61,7 +72,9 @@ def get_response(user_input):
     best_score = similarity[0][best_match_index]
 
     if best_score < 0.5:
-        answer = ask_llm(translated_input)
+        conversation_history.append({"role": "user", "content": translated_input})
+        answer = ask_llm(conversation_history)
+        conversation_history.append({"role": "assistant", "content": answer})
     else:
         answer = answers[best_match_index]
 
