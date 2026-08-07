@@ -58,7 +58,7 @@ def get_response(user_input, conversation_history):
     best_match_index = np.argmax(similarity)
     best_score = similarity[0][best_match_index]
 
-    if best_score < 0.5:
+    if best_score < 0.65:
         conversation_history.append({"role": "user", "content": translated_input})
         answer = ask_llm(conversation_history)
         conversation_history.append({"role": "assistant", "content": answer})
