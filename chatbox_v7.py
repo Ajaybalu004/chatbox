@@ -31,7 +31,7 @@ custom_stopwords = ['what', 'is', 'you', 'are', 'your', 'the', 'a', 'an','who']
 vectorizer = TfidfVectorizer(stop_words=custom_stopwords)
 question_vectors = vectorizer.fit_transform(stemmed_questions)
 
-def ask_llm(user_input):
+def ask_llm(conversation_history):
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -41,20 +41,7 @@ def ask_llm(user_input):
     except Exception as e:
         return f"Sorry, I couldn't reach the AI service. {e}"
 
-conversation_history = [
-    {
-        "role": "system",
-        "content": (
-            "You are Aura AI, a helpful, knowledgeable assistant. "
-            "Answer clearly and concisely. Break down complex topics into "
-            "simple explanations when helpful. If you don't know something "
-            "or aren't certain, say so honestly rather than guessing. "
-            "Keep a friendly, professional tone. Avoid unnecessary repetition."
-        )
-    }
-]
-
-def get_response(user_input):
+def get_response(user_input, conversation_history):
     try:
         if len(user_input.strip()) > 15:
             detected_lang = detect(user_input)
@@ -84,9 +71,12 @@ def get_response(user_input):
     return answer
 
 if __name__ == "__main__":
-    print("Chatbot ready. Type 'exit' to quit.\n")
+    history = [
+        {"role": "system", "content": "You are Aura AI, a helpful, knowledgeable assistant. Answer clearly and concisely. If you don't know something, say so honestly. Keep a friendly, professional tone."}
+    ]
+    print("Aura AI ready. Type 'exit' to quit.\n")
     while True:
         user_input = input("You: ")
         if user_input.lower() == "exit":
             break
-        print("Bot:", get_response(user_input))
+        print("Bot:", get_response(user_input, history))
