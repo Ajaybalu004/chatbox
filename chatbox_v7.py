@@ -72,9 +72,9 @@ def get_response(user_input, conversation_history):
 
 if __name__ == "__main__":
     history = [
-        {"role": "system", "content": "You are Aura AI, a helpful, knowledgeable assistant. Answer clearly and concisely. If you don't know something, say so honestly. Keep a friendly, professional tone."}
+        {"role": "system", "content": "You are Chatbox AI, a helpful, knowledgeable assistant. Answer clearly and concisely. If you don't know something, say so honestly. Keep a friendly, professional tone."}
     ]
-    print("Aura AI ready. Type 'exit' to quit.\n")
+    print("Chatbox AI ready. Type 'exit' to quit.\n")
     while True:
         user_input = input("You: ")
         if user_input.lower() == "exit":

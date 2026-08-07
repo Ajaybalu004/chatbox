@@ -1,4 +1,4 @@
-# 🤖 Aura AI — Multilingual Hybrid Chatbot
+# 🤖 Chatbox AI — Multilingual Hybrid Chatbot
 
 A chatbot that combines fast local retrieval with LLM-powered fallback, so it can answer both predefined questions instantly and truly open-ended questions in any language.
 

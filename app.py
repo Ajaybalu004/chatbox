@@ -1,9 +1,8 @@
 import streamlit as st
 from chatbox_v7 import get_response
 
-st.set_page_config(page_title="Aura AI", page_icon="🤖")
-
-st.title("🤖 Aura AI")
+st.set_page_config(page_title="Chatbox AI", page_icon="🤖")
+st.title("🤖 Chatbox AI")
 st.caption("Ask me anything — in any language.")
 
 # Chat display history (what's shown on screen)
