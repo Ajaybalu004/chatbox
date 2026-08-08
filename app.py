@@ -5,7 +5,8 @@ import os
 from yaml.loader import SafeLoader
 from database import init_db, create_conversation, get_conversations, save_message, load_messages, delete_conversation, rename_conversation
 from chatbox_v7 import get_response
-
+import smtplib
+from email.mime.text import MIMEText
 init_db()
 
 # ===== NEW: create config.yaml from Streamlit secrets if it doesn't exist =====
@@ -37,16 +38,58 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
+def send_reset_email(to_email, new_password):
+    sender_email = os.getenv("EMAIL_ADDRESS")
+    sender_password = os.getenv("EMAIL_APP_PASSWORD")
+
+    msg = MIMEText(f"Your Chatbox AI password has been reset.\n\nYour new password is: {new_password}\n\nPlease log in and consider changing it.")
+    msg['Subject'] = "Chatbox AI - Password Reset"
+    msg['From'] = sender_email
+    msg['To'] = to_email
+
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+
 if "show_signup" not in st.session_state:
     st.session_state.show_signup = False
 
 if st.session_state.get('authentication_status') is not True:
-    if not st.session_state.show_signup:
+    if "auth_view" not in st.session_state:
+        st.session_state.auth_view = "login"
+
+    if st.session_state.auth_view == "login":
         authenticator.login(location='main')
-        if st.button("Don't have an account? Sign up"):
-            st.session_state.show_signup = True
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Don't have an account? Sign up"):
+                st.session_state.auth_view = "signup"
+                st.rerun()
+        with col2:
+            if st.button("Forgot password?"):
+                st.session_state.auth_view = "forgot"
+                st.rerun()
+
+    elif st.session_state.auth_view == "forgot":
+        st.subheader("Forgot Password")
+        try:
+            username_of_forgotten_password, email_of_forgotten_password, new_random_password = authenticator.forgot_password()
+            if username_of_forgotten_password:
+                send_reset_email(email_of_forgotten_password, new_random_password)
+                with open('config.yaml', 'w') as file:
+                    yaml.dump(config, file, default_flow_style=False)
+                st.success("A new password has been sent to your email.")
+            elif username_of_forgotten_password == False:
+                st.error("Username not found.")
+        except Exception as e:
+            st.error(e)
+
+        if st.button("← Back to Login"):
+            st.session_state.auth_view = "login"
             st.rerun()
-    else:
+
+    elif st.session_state.auth_view == "signup":
         try:
             email, username, name = authenticator.register_user()
             if email:
@@ -55,11 +98,15 @@ if st.session_state.get('authentication_status') is not True:
                 st.session_state['authentication_status'] = True
                 st.session_state['username'] = username
                 st.session_state['name'] = name
-                st.session_state.show_signup = False
+                st.session_state.auth_view = "login"
                 st.success(f"Welcome, {name}! Logging you in...")
                 st.rerun()
         except Exception as e:
             st.error(e)
+
+        if st.button("← Back to Login"):
+            st.session_state.auth_view = "login"
+            st.rerun()
 
 if st.session_state.get('authentication_status') is False:
     st.error('Username/password is incorrect')
@@ -68,7 +115,52 @@ elif st.session_state.get('authentication_status') is None:
     st.warning('Please log in or sign up to continue')
     st.stop()
 
+if st.session_state.get('authentication_status') is False:
+    st.error('Username/password is incorrect')
+    st.stop()
+elif st.session_state.get('authentication_status') is None:
+    st.stop()
+
 username = st.session_state["username"]
+
+# ===== NEW: ask if user wants to change password, once per session ======
+if "password_prompt_shown" not in st.session_state:
+    st.session_state.password_prompt_shown = False
+
+if not st.session_state.password_prompt_shown:
+    st.subheader("Welcome back!")
+    st.write("Would you like to change your password now?")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Yes, change my password"):
+            st.session_state.show_password_change = True
+            st.session_state.password_prompt_shown = True
+            st.rerun()
+    with col2:
+        if st.button("No, continue to chat"):
+            st.session_state.password_prompt_shown = True
+            st.rerun()
+    st.stop()
+if st.session_state.get("show_password_change", False):
+    st.subheader("Change your password")
+
+    if st.session_state.get("password_changed", False):
+        st.success("Password changed successfully!")
+        if st.button("Continue to chat"):
+            st.session_state.show_password_change = False
+            st.session_state.password_changed = False
+            st.rerun()
+    else:
+        try:
+            if authenticator.reset_password(username):
+                with open('config.yaml', 'w') as file:
+                    yaml.dump(config, file, default_flow_style=False)
+                st.session_state.password_changed = True
+                st.rerun()
+        except Exception as e:
+            st.error(e)
+    st.stop()
+# ==========================================================================
 
 st.set_page_config(
     page_title="Chatbox AI",
@@ -79,7 +171,8 @@ st.set_page_config(
 SYSTEM_PROMPT = {"role": "system", "content": "You are Chatbox AI, a helpful, knowledgeable assistant. Answer clearly and concisely. If you don't know something, say so honestly. Keep a friendly, professional tone."}
 
 with st.sidebar:
-    authenticator.logout()
+    if st.session_state.get('authentication_status'):
+        authenticator.logout()
     st.header("🤖 Chatbox AI")
     st.divider()
 
