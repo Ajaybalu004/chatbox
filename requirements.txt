@@ -6,3 +6,7 @@ langdetect
 scikit-learn
 nltk
 numpy
+tavily-python
+streamlit-authenticator
+pyyaml
+psycopg2-binary
