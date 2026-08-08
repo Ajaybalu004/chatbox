@@ -1,11 +1,31 @@
 import streamlit as st
 import streamlit_authenticator as stauth
 import yaml
+import os
 from yaml.loader import SafeLoader
 from database import init_db, create_conversation, get_conversations, save_message, load_messages, delete_conversation, rename_conversation
 from chatbox_v7 import get_response
 
 init_db()
+
+# ===== NEW: create config.yaml from Streamlit secrets if it doesn't exist =====
+if not os.path.exists('config.yaml'):
+    config_content = f"""
+credentials:
+  usernames:
+    ajay:
+      email: ajaybalu0210@gmail.com
+      name: Ajay Balu
+      password: {st.secrets["ADMIN_PASSWORD_HASH"]}
+
+cookie:
+  name: chatbox_auth_cookie
+  key: {st.secrets["COOKIE_KEY"]}
+  expiry_days: 30
+"""
+    with open('config.yaml', 'w') as f:
+        f.write(config_content)
+# ==================================================================
 
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
@@ -58,7 +78,6 @@ st.set_page_config(
 
 SYSTEM_PROMPT = {"role": "system", "content": "You are Chatbox AI, a helpful, knowledgeable assistant. Answer clearly and concisely. If you don't know something, say so honestly. Keep a friendly, professional tone."}
 
-# ===== NEW: sidebar with conversation list =====
 with st.sidebar:
     authenticator.logout()
     st.header("🤖 Chatbox AI")
@@ -91,12 +110,10 @@ with st.sidebar:
                     st.session_state.message = []
                     st.session_state.llm_history = [SYSTEM_PROMPT]
                 st.rerun()
-# ==================================================
 
 st.title("🤖 Chatbox AI")
 st.caption("Ask me anything — in any language.")
 
-# ===== NEW: ensure a conversation exists =====
 if "current_conversation_id" not in st.session_state:
     conversations = get_conversations(username)
     if conversations:
@@ -108,7 +125,6 @@ if "current_conversation_id" not in st.session_state:
 
 if "llm_history" not in st.session_state:
     st.session_state.llm_history = [SYSTEM_PROMPT] + st.session_state.message
-# ================================================
 
 example_clicked = None
 
@@ -124,7 +140,6 @@ final_input = user_input if user_input else example_clicked
 if final_input:
     conv_id = st.session_state.current_conversation_id
 
-    # Auto-title the conversation using the first message
     if not st.session_state.message:
         title = final_input[:40] + ("..." if len(final_input) > 40 else "")
         rename_conversation(conv_id, title)
