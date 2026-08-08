@@ -3,6 +3,7 @@ import os
 import numpy as np
 from dotenv import load_dotenv
 from groq import Groq
+from tavily import TavilyClient
 
 from deep_translator import GoogleTranslator
 from langdetect import detect
@@ -12,6 +13,7 @@ from nltk.stem import PorterStemmer
 
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 stemmer = PorterStemmer()
 
@@ -41,6 +43,32 @@ def ask_llm(conversation_history):
     except Exception as e:
         return f"Sorry, I couldn't reach the AI service. {e}"
 
+def search_realtime(query):
+    try:
+        results = tavily_client.search(
+            query,
+            max_results=3,
+            search_depth="basic"
+        )
+
+        if not results.get('results'):
+            return None
+        # Trim each result's content to avoid exceeding token limits
+        context_parts = []
+        for r in results['results']:
+            content = r['content'][:500]  # limit each result to 500 characters
+            context_parts.append(f"{r['title']}: {content}")
+        context = "\n\n".join(context_parts)
+        return context
+    except Exception as e:
+        return None
+
+REALTIME_KEYWORDS = ["latest", "current", "today", "now", "recent", "news", "score", "update", "2026", "this year", "right now"]
+
+def needs_realtime_search(query):
+    query_lower = query.lower()
+    return any(keyword in query_lower for keyword in REALTIME_KEYWORDS)
+
 def get_response(user_input, conversation_history):
     try:
         if len(user_input.strip()) > 15:
@@ -58,16 +86,30 @@ def get_response(user_input, conversation_history):
     best_match_index = np.argmax(similarity)
     best_score = similarity[0][best_match_index]
 
-    if best_score < 0.65:
-        conversation_history.append({"role": "user", "content": translated_input})
-        answer = ask_llm(conversation_history)
+    if best_score < 0.5:
+        # ===== NEW: check if real-time search is needed =====
+        if needs_realtime_search(translated_input):
+            search_context = search_realtime(translated_input)
+            if search_context:
+                augmented_input = f"Using this current information:\n{search_context}\n\nAnswer this question: {translated_input}"
+            else:
+                augmented_input = translated_input
+        else:
+            augmented_input = translated_input
+        # ========================================================
+
+        conversation_history.append({"role": "user", "content": augmented_input})
+
+        # Keep only the system prompt + last 6 messages to avoid token limit issues
+        trimmed_history = [conversation_history[0]] + conversation_history[-6:]
+
+        answer = ask_llm(trimmed_history)
         conversation_history.append({"role": "assistant", "content": answer})
     else:
         answer = answers[best_match_index]
 
-    if detected_lang != 'en':
+    if detected_lang != 'en' and not answer.startswith("Sorry, I couldn't reach"):
         answer = GoogleTranslator(source='en', target=detected_lang).translate(answer)
-
     return answer
 
 if __name__ == "__main__":

@@ -1,5 +1,54 @@
 import streamlit as st
+import streamlit_authenticator as stauth
+import yaml
+from yaml.loader import SafeLoader
+from database import init_db, create_conversation, get_conversations, save_message, load_messages, delete_conversation, rename_conversation
 from chatbox_v7 import get_response
+
+init_db()
+
+with open('config.yaml') as file:
+    config = yaml.load(file, Loader=SafeLoader)
+
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
+)
+
+if "show_signup" not in st.session_state:
+    st.session_state.show_signup = False
+
+if st.session_state.get('authentication_status') is not True:
+    if not st.session_state.show_signup:
+        authenticator.login(location='main')
+        if st.button("Don't have an account? Sign up"):
+            st.session_state.show_signup = True
+            st.rerun()
+    else:
+        try:
+            email, username, name = authenticator.register_user()
+            if email:
+                with open('config.yaml', 'w') as file:
+                    yaml.dump(config, file, default_flow_style=False)
+                st.session_state['authentication_status'] = True
+                st.session_state['username'] = username
+                st.session_state['name'] = name
+                st.session_state.show_signup = False
+                st.success(f"Welcome, {name}! Logging you in...")
+                st.rerun()
+        except Exception as e:
+            st.error(e)
+
+if st.session_state.get('authentication_status') is False:
+    st.error('Username/password is incorrect')
+    st.stop()
+elif st.session_state.get('authentication_status') is None:
+    st.warning('Please log in or sign up to continue')
+    st.stop()
+
+username = st.session_state["username"]
 
 st.set_page_config(
     page_title="Chatbox AI",
@@ -7,44 +56,61 @@ st.set_page_config(
     layout="centered"
 )
 
+SYSTEM_PROMPT = {"role": "system", "content": "You are Chatbox AI, a helpful, knowledgeable assistant. Answer clearly and concisely. If you don't know something, say so honestly. Keep a friendly, professional tone."}
+
+# ===== NEW: sidebar with conversation list =====
 with st.sidebar:
+    authenticator.logout()
     st.header("🤖 Chatbox AI")
     st.divider()
-    if st.button("🗑️ Clear chat"):
+
+    if st.button("➕ New Chat", use_container_width=True):
+        new_id = create_conversation(username)
+        st.session_state.current_conversation_id = new_id
         st.session_state.message = []
-        st.session_state.llm_history = [
-            {"role": "system", "content": "You are Chatbox AI, a helpful, knowledgeable assistant. Answer clearly and concisely. If you don't know something, say so honestly. Keep a friendly, professional tone."}
-        ]
+        st.session_state.llm_history = [SYSTEM_PROMPT]
         st.rerun()
+
+    st.divider()
+
+    conversations = get_conversations(username)
+    for convo in conversations:
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            if st.button(convo["title"], key=f"convo_{convo['id']}", use_container_width=True):
+                st.session_state.current_conversation_id = convo["id"]
+                st.session_state.message = load_messages(convo["id"])
+                st.session_state.llm_history = [SYSTEM_PROMPT] + st.session_state.message
+                st.rerun()
+        with col2:
+            if st.button("🗑️", key=f"delete_{convo['id']}"):
+                delete_conversation(convo["id"])
+                if st.session_state.get("current_conversation_id") == convo["id"]:
+                    new_id = create_conversation(username)
+                    st.session_state.current_conversation_id = new_id
+                    st.session_state.message = []
+                    st.session_state.llm_history = [SYSTEM_PROMPT]
+                st.rerun()
+# ==================================================
 
 st.title("🤖 Chatbox AI")
 st.caption("Ask me anything — in any language.")
 
-if "message" not in st.session_state:
-    st.session_state.message = []
+# ===== NEW: ensure a conversation exists =====
+if "current_conversation_id" not in st.session_state:
+    conversations = get_conversations(username)
+    if conversations:
+        st.session_state.current_conversation_id = conversations[0]["id"]
+        st.session_state.message = load_messages(conversations[0]["id"])
+    else:
+        st.session_state.current_conversation_id = create_conversation(username)
+        st.session_state.message = []
 
 if "llm_history" not in st.session_state:
-    st.session_state.llm_history = [
-        {"role": "system", "content": "You are Chatbox AI, a helpful, knowledgeable assistant. Answer clearly and concisely. If you don't know something, say so honestly. Keep a friendly, professional tone."}
-    ]
+    st.session_state.llm_history = [SYSTEM_PROMPT] + st.session_state.message
+# ================================================
 
-# ===== NEW: Welcome message + example prompts (only shown before first message) =====
-if not st.session_state.message:
-    st.info("👋 Try asking me something — in any language!")
-    col1, col2, col3 = st.columns(3)
-    example_clicked = None
-    with col1:
-        if st.button("Explain gravity"):
-            example_clicked = "Explain gravity in simple terms"
-    with col2:
-        if st.button("Tell me a joke"):
-            example_clicked = "Tell me a joke"
-    with col3:
-        if st.button("नमस्ते"):
-            example_clicked = "नमस्ते"
-else:
-    example_clicked = None
-# =======================================================================
+example_clicked = None
 
 for msg in st.session_state.message:
     avatar = "🧑" if msg["role"] == "user" else "🤖"
@@ -53,12 +119,18 @@ for msg in st.session_state.message:
 
 user_input = st.chat_input("Type your message...")
 
-# ===== NEW: use example button click if no typed input =====
 final_input = user_input if user_input else example_clicked
-# ==============================================================
 
 if final_input:
+    conv_id = st.session_state.current_conversation_id
+
+    # Auto-title the conversation using the first message
+    if not st.session_state.message:
+        title = final_input[:40] + ("..." if len(final_input) > 40 else "")
+        rename_conversation(conv_id, title)
+
     st.session_state.message.append({"role": "user", "content": final_input})
+    save_message(conv_id, "user", final_input)
     with st.chat_message("user", avatar="🧑"):
         st.write(final_input)
 
@@ -67,6 +139,7 @@ if final_input:
             response = get_response(final_input, st.session_state.llm_history)
         st.write(response)
     st.session_state.message.append({"role": "assistant", "content": response})
+    save_message(conv_id, "assistant", response)
     st.rerun()
 
 st.divider()
